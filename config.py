@@ -33,8 +33,8 @@ _C.DATA.NUM_WORKERS = 8
 
 # [新增] 临床数据归一化参数 (来自 csv_get.py 的统计结果)
 # 顺序: Age, Height, Weight
-_C.DATA.TABULAR_MEAN = [68.1653, 162.0900, 63.6245]
-_C.DATA.TABULAR_STD  = [9.9279, 8.0089, 10.5950]
+_C.DATA.TABULAR_MEAN = [68.16534574995046, 161.99546760451753, 63.52480186249258]
+_C.DATA.TABULAR_STD  = [9.92792691813326, 8.244953649169963, 11.02788103797]
 
 # -----------------------------------------------------------------------------
 # Model settings
@@ -86,9 +86,14 @@ _C.MODEL.SWINV2.ESC_KERNEL_SIZE = 13
 # -----------------------------------------------------------------------------
 # [修复] 必须先定义 _C.MODEL，再定义 _C.MODEL.FUSION
 _C.MODEL.FUSION = CN()
-_C.MODEL.FUSION.ENABLE = False          # 是否开启多模态融合
-_C.MODEL.FUSION.TABULAR_DIM = 4         # 临床数据的维度 (年龄, 性别, 身高, 体重)
-_C.MODEL.FUSION.LATENT_DIM = 64         # 融合时的隐藏层维度
+# [修改] 改为 ENABLED 以匹配通常习惯
+_C.MODEL.FUSION.ENABLED = False
+# [修改] 临床特征维度 (Age, Gender, Height, Weight = 4)
+_C.MODEL.FUSION.CLINICAL_DIM = 4
+# [新增] 临床数据 CSV 文件的路径
+_C.MODEL.FUSION.CSV_PATH = r'D:\Documents\Swin-Transformer\dataset\clinical_data.csv'
+# [保留] 融合时的投影/隐藏层维度
+_C.MODEL.FUSION.LATENT_DIM = 64
 
 # -----------------------------------------------------------------------------
 # Training settings
@@ -142,6 +147,7 @@ _C.AUG.CUTMIX = 1.0
 _C.AUG.MIXUP_PROB = 1.0
 _C.AUG.MIXUP_SWITCH_PROB = 0.5
 _C.AUG.MIXUP_MODE = 'batch'
+_C.AUG.CUTMIX_MINMAX = None
 
 # -----------------------------------------------------------------------------
 # Testing settings

@@ -547,6 +547,70 @@ class PatchEmbed(nn.Module):
             flops += Ho * Wo * self.embed_dim
         return flops
 
+class ClinicalHead(nn.Module):
+    """
+    H-CQA: Head-Only Clinical-Query Attention
+    替代 Swin V2 原本的 GlobalAvgPool + Linear，用于临床特征融合。
+    """
+    def __init__(self, img_dim, clinical_dim=4, num_classes=1000, num_heads=8, qkv_bias=True):
+        super().__init__()
+        self.num_heads = num_heads
+        self.scale = (img_dim // num_heads) ** -0.5
+
+        # 1. 语义桥接: 将低维临床特征映射到图像特征维度
+        self.clin_proj = nn.Sequential(
+            nn.Linear(clinical_dim, img_dim // 2),
+            nn.LayerNorm(img_dim // 2),
+            nn.GELU(),
+            nn.Linear(img_dim // 2, img_dim),
+            nn.LayerNorm(img_dim)
+        )
+
+        # 2. 探照灯 (Cross-Attention)
+        self.W_q = nn.Linear(img_dim, img_dim, bias=qkv_bias)
+        self.W_k = nn.Linear(img_dim, img_dim, bias=qkv_bias)
+        self.W_v = nn.Linear(img_dim, img_dim, bias=qkv_bias)
+
+        self.proj = nn.Linear(img_dim, img_dim)
+        self.norm = nn.LayerNorm(img_dim)
+
+        # 3. 最终分类器
+        self.fc = nn.Linear(img_dim, num_classes)
+
+    def forward(self, img_feat, clinical_data):
+        """
+        Args:
+            img_feat: (B, L, C) - 未池化的图像特征
+            clinical_data: (B, clinical_dim) - 归一化后的临床数据
+        """
+        B, L, C = img_feat.shape
+
+        # --- A. 生成 Query (B, 1, C) ---
+        q = self.clin_proj(clinical_data).unsqueeze(1)
+
+        # --- B. Cross-Attention ---
+        # Reshape: (B, N, H, C//H)
+        q_t = self.W_q(q).reshape(B, 1, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        k_t = self.W_k(img_feat).reshape(B, L, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        v_t = self.W_v(img_feat).reshape(B, L, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+
+        # Attention Score
+        attn = (q_t @ k_t.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+
+        # Weighted Aggregation
+        x_attn = (attn @ v_t).transpose(1, 2).reshape(B, 1, C)
+        x_attn = self.proj(x_attn)
+        x_attn = self.norm(x_attn)
+
+        # --- C. 双路残差融合 (Dual-Path Residual) ---
+        # 融合特征 = 智能聚合 + 全局平均 (保底)
+        x_avg = img_feat.mean(dim=1, keepdim=True) # (B, 1, C)
+        x = x_attn + x_avg
+
+        # --- D. 分类 ---
+        x = x.squeeze(1) # (B, C)
+        return self.fc(x)
 
 class SwinTransformerV2(nn.Module):
     r""" Swin Transformer
@@ -562,6 +626,7 @@ class SwinTransformerV2(nn.Module):
                  use_checkpoint=False, pretrained_window_sizes=[0, 0, 0, 0],
                  # [新增] ESC 参数
                  use_esc=False, esc_pdim=16, esc_kernel_size=13,
+                 use_fusion=False, fusion_clinical_dim=4,
                  **kwargs):
         super().__init__()
 
@@ -633,8 +698,22 @@ class SwinTransformerV2(nn.Module):
             self.layers.append(layer)
 
         self.norm = norm_layer(self.num_features)
-        self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
+
+        self.use_fusion = use_fusion
+        if self.use_fusion:
+            # 开启融合：初始化 ClinicalHead，禁用原本的 avgpool/head
+            self.fusion_head = ClinicalHead(
+                img_dim=self.num_features,
+                clinical_dim=fusion_clinical_dim,
+                num_classes=num_classes
+            )
+            self.avgpool = nn.Identity()
+            self.head = nn.Identity()
+        else:
+            # 关闭融合：使用原版 Swin 逻辑
+            self.avgpool = nn.AdaptiveAvgPool1d(1)
+            self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
+        # ================================================================
 
         self.apply(self._init_weights)
         for bly in self.layers:
@@ -661,29 +740,55 @@ class SwinTransformerV2(nn.Module):
             base_keywords.add("esc_plk_filter")
         return base_keywords
 
-    def forward_features(self, x):
+    # [新增函数] 只负责提取特征序列，保留空间维度 (B, L, C)，不进行池化
+    def forward_features_seq(self, x):
         x = self.patch_embed(x)
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        # [新增] ESC 共享大核生成
+        # ESC 共享大核逻辑 (适配你之前的修改)
         lk_filter = None
         if self.use_esc:
             lk_filter = self.esc_filter_func(self.esc_plk_filter)
 
         for layer in self.layers:
-            # [修改] 传递 lk_filter
+            # 传递 lk_filter
             x = layer(x, lk_filter=lk_filter)
 
-        x = self.norm(x)  # B L C
+        x = self.norm(x)  # 输出形状: (B, L, C) 注意 L=H*W
+        return x
+
+    # [修改函数] 为了兼容性保留这个接口，返回 Flatten 后的特征
+    def forward_features(self, x):
+        x = self.forward_features_seq(x)
+        # 如果调用这个老接口，说明是做纯图像分类，走默认池化
         x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
         return x
 
-    def forward(self, x):
-        x = self.forward_features(x)
-        x = self.head(x)
+    # [修改函数] 主入口，支持接收 clinical_data
+    def forward(self, x, clinical_data=None):
+        """
+        Args:
+            x: Image (B, C, H, W)
+            clinical_data: (B, 4) Optional - 临床特征
+        """
+        # 1. 获取未池化的序列特征 (B, L, C)
+        x = self.forward_features_seq(x)
+
+        # 2. 根据配置决定走哪条路
+        if self.use_fusion and clinical_data is not None:
+            # --- 走智能融合头 (H-CQA) ---
+            # 这一步内部完成了 Attention 搜索 + 加权池化 + 分类
+            x = self.fusion_head(x, clinical_data)
+        else:
+            # --- 走原版 Swin 头 (或 fallback) ---
+            # 手动补上原版 forward_features 里剩下的池化步骤
+            x = self.avgpool(x.transpose(1, 2)) # (B, C, 1)
+            x = torch.flatten(x, 1)             # (B, C)
+            x = self.head(x)
+
         return x
 
     def flops(self):

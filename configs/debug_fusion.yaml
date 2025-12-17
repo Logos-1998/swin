@@ -8,7 +8,7 @@ DATA:
 
 MODEL:
   TYPE: 'swinv2'
-  NAME: 'debug_swinv2_esc'
+  NAME: 'debug_swinv2_fusion'
   NUM_CLASSES: 3
   DROP_PATH_RATE: 0.1
 
@@ -18,11 +18,19 @@ MODEL:
     NUM_HEADS: [3, 6, 12, 24]
     WINDOW_SIZE: 8
 
-    # ===  ===
-    USE_ESC: False
+    #
+    USE_ESC: True
     ESC_PDIM: 16
     ESC_KERNEL_SIZE: 13
-    # ==========================
+    # ===================
+
+  # ===
+  FUSION:
+    ENABLED: False
+    CLINICAL_DIM: 4
+
+    CSV_PATH: 'D:\Documents\Swin-Transformer\dataset\clinical_data.csv'
+  # ===============================
 
 TRAIN:
   EPOCHS: 1
@@ -31,3 +39,11 @@ TRAIN:
   WEIGHT_DECAY: 0.05
   OPTIMIZER:
     NAME: 'adamw'
+
+
+AUG:
+  MIXUP: 0.0
+  CUTMIX: 0.0
+  MIXUP_PROB: 0.0
+  CUTMIX_MINMAX: null
+# ===============================

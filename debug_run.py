@@ -15,13 +15,24 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 def print_model_hierarchy(model):
     """
-    可视化打印模型的层级结构
+    可视化打印模型的层级结构 (支持 Swin, ESC, H-CQA Fusion)
     """
     print("\n" + "="*60)
     print("🏗️  MODEL ARCHITECTURE INSPECTION (模型结构透视)")
     print("="*60)
 
-    # 检查是否是 Swin 结构
+    # 1. 检查 Fusion Head
+    if hasattr(model, 'use_fusion') and model.use_fusion:
+        print("🧠 [Head] H-CQA Fusion Enabled (智能临床融合头)")
+        print(f"   └─ Input: Image Features + Clinical Query")
+        if hasattr(model, 'fusion_head'):
+            print(f"   └─ Module: {type(model.fusion_head).__name__}")
+    else:
+        print("🗿 [Head] Standard Swin Head (GlobalAvgPool + Linear)")
+
+    print("-" * 60)
+
+    # 2. 检查 Backbone 结构
     if not hasattr(model, 'layers'):
         print("❌ 无法解析结构：未找到 model.layers 属性")
         return
@@ -59,11 +70,12 @@ def print_model_hierarchy(model):
 
 
 def main():
-    print("🚀 开始 ESC 模块集成测试 & 结构验证...")
+    print("🚀 开始 H-CQA 融合模块集成测试...")
 
     # 1. 解析参数
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='configs/debug_esc.yaml', help='config file path')
+    # 默认使用你刚才新建的 debug_fusion.yaml
+    parser.add_argument('--cfg', type=str, default='configs/debug_fusion.yaml', help='config file path')
     parser.add_argument('--batch-size', type=int, help='batch size')
     parser.add_argument('--data-path', type=str, help='dataset path')
     parser.add_argument('--resume', help='resume from checkpoint')
@@ -92,14 +104,17 @@ def main():
     # 3. 构建数据加载器
     print(f"⏳ 正在加载数据集: {config.DATA.DATA_PATH} ...")
     try:
+        # 如果开启了融合，dataset_train[0] 将返回 ((img, clin), label)
         dataset_train, dataset_val, data_loader_train, data_loader_val, mixup_fn = build_loader(config)
         print(f"✅ 数据加载成功 (Train: {len(dataset_train)}, Val: {len(dataset_val)})")
     except Exception as e:
         print(f"❌ 数据加载失败: {e}")
+        import traceback
+        traceback.print_exc()
         return
 
     # 4. 构建模型
-    print("⏳ 正在构建模型 (启用 ESC)...")
+    print("⏳ 正在构建模型...")
     try:
         model = build_model(config)
         model.to(device)
@@ -127,16 +142,40 @@ def main():
     model.train()
 
     try:
-        for idx, (samples, targets) in enumerate(data_loader_train):
-            samples = samples.to(device)
-            targets = targets.to(device)
+        # 注意：这里的 input_data 可能是 Tensor，也可能是 List [images, clinical_data]
+        for idx, (input_data, targets) in enumerate(data_loader_train):
 
-            if mixup_fn is not None:
-                samples, targets = mixup_fn(samples, targets)
+            # --- [核心修改] 数据解包逻辑 ---
+            if config.MODEL.FUSION.ENABLED:
+                # 融合模式: input_data 是一个列表 [images, clinical_data]
+                images, clinical_data = input_data
+                images = images.to(device)
+                clinical_data = clinical_data.to(device)
+                targets = targets.to(device)
 
-            print(f"   Batch {idx+1}: Input {samples.shape} -> ", end="")
+                # 融合模式下暂不支持 Mixup
+                if mixup_fn is not None:
+                    print("⚠️  Warning: Mixup is active but Fusion is enabled. Skipping Mixup.")
 
-            outputs = model(samples)
+                print(f"   Batch {idx+1}: Img {images.shape}, Clin {clinical_data.shape} -> ", end="")
+
+                # 调用模型 (传入双参数)
+                outputs = model(images, clinical_data)
+
+            else:
+                # 普通模式: input_data 就是 images
+                images = input_data.to(device)
+                targets = targets.to(device)
+
+                if mixup_fn is not None:
+                    images, targets = mixup_fn(images, targets)
+
+                print(f"   Batch {idx+1}: Input {images.shape} -> ", end="")
+
+                # 调用模型 (传入单参数)
+                outputs = model(images)
+            # -------------------------------
+
             loss = criterion(outputs, targets)
 
             optimizer.zero_grad()
@@ -148,7 +187,8 @@ def main():
             if idx >= 1:
                 break
 
-        print("\n✨ 恭喜！训练流程与结构验证全部通过。")
+        print("\n✨ 恭喜！H-CQA 融合模块集成测试通过。")
+        print("   现在你可以放心地使用该架构进行完整训练了。")
 
     except Exception as e:
         print(f"\n❌ 训练循环崩溃: {e}")

@@ -123,32 +123,58 @@ def main():
     # ================= 路径配置区域 =================
     # 请填入实际绝对路径，保持与生成脚本一致
 
-    # --- A组 ---
-    src_A1 = r"E:\WM\DATA\dataset_original\train\Normal"
-    src_A2 = r"E:\WM\DATA\dataset_original\val\Normal"
-    src_A3 = r"E:\WM\DATA\dataset_original\test\Normal"
+    # NFH first,desktop second
 
-    dst_A1 = r"E:\WM\Swin-Transformer\dataset\train\Normal"
-    dst_A2 = r"E:\WM\Swin-Transformer\dataset\val\Normal"
-    dst_A3 = r"E:\WM\Swin-Transformer\dataset\test\Normal"
+    # --- A组 ---
+    # src_A1 = r"E:\WM\DATA\dataset_original\train\Normal"
+    # src_A2 = r"E:\WM\DATA\dataset_original\val\Normal"
+    # src_A3 = r"E:\WM\DATA\dataset_original\test\Normal"
+
+    # dst_A1 = r"E:\WM\Swin-Transformer\dataset\train\Normal"
+    # dst_A2 = r"E:\WM\Swin-Transformer\dataset\val\Normal"
+    # dst_A3 = r"E:\WM\Swin-Transformer\dataset\test\Normal"
+
+    src_A1 = r"D:\Documents\Data\PNG512\dataset\train\Normal"
+    src_A2 = r"D:\Documents\Data\PNG512\dataset\val\Normal"
+    src_A3 = r"D:\Documents\Data\PNG512\dataset\test\Normal"
+
+    dst_A1 = r"D:\Documents\Swin-Transformer\dataset\train\Normal"
+    dst_A2 = r"D:\Documents\Swin-Transformer\dataset\val\Normal"
+    dst_A3 = r"D:\Documents\Swin-Transformer\dataset\test\Normal"
 
     # --- B组 ---
-    src_B1 = r"E:\WM\DATA\dataset_original\train\OP"
-    src_B2 = r"E:\WM\DATA\dataset_original\val\OP"
-    src_B3 = r"E:\WM\DATA\dataset_original\test\OP"
+    # src_B1 = r"E:\WM\DATA\dataset_original\train\OP"
+    # src_B2 = r"E:\WM\DATA\dataset_original\val\OP"
+    # src_B3 = r"E:\WM\DATA\dataset_original\test\OP"
 
-    dst_B1 = r"E:\WM\Swin-Transformer\dataset\train\OP"
-    dst_B2 = r"E:\WM\Swin-Transformer\dataset\val\OP"
-    dst_B3 = r"E:\WM\Swin-Transformer\dataset\test\OP"
+    # dst_B1 = r"E:\WM\Swin-Transformer\dataset\train\OP"
+    # dst_B2 = r"E:\WM\Swin-Transformer\dataset\val\OP"
+    # dst_B3 = r"E:\WM\Swin-Transformer\dataset\test\OP"
+
+    src_B1 = r"D:\Documents\Data\PNG512\dataset\train\OP"
+    src_B2 = r"D:\Documents\Data\PNG512\dataset\val\OP"
+    src_B3 = r"D:\Documents\Data\PNG512\dataset\test\OP"
+
+    dst_B1 = r"D:\Documents\Swin-Transformer\dataset\train\OP"
+    dst_B2 = r"D:\Documents\Swin-Transformer\dataset\val\OP"
+    dst_B3 = r"D:\Documents\Swin-Transformer\dataset\test\OP"
 
     # --- C组 ---
-    src_C1 = r"E:\WM\DATA\dataset_original\train\OPA"
-    src_C2 = r"E:\WM\DATA\dataset_original\val\OPA"
-    src_C3 = r"E:\WM\DATA\dataset_original\test\OPA"
+    # src_C1 = r'E:\WM\DATA\dataset_original\train\OPA'
+    # src_C2 = r'E:\WM\DATA\dataset_original\val\OPA'
+    # src_C3 = r"E:\WM\DATA\dataset_original\test\OPA"
+    #
+    # dst_C1 = r"E:\WM\Swin-Transformer\dataset\train\OPA"
+    # dst_C2 = r"E:\WM\Swin-Transformer\dataset\val\OPA"
+    # dst_C3 = r"E:\WM\Swin-Transformer\dataset\test\OPA"
 
-    dst_C1 = r"E:\WM\Swin-Transformer\dataset\train\OPA"
-    dst_C2 = r"E:\WM\Swin-Transformer\dataset\val\OPA"
-    dst_C3 = r"E:\WM\Swin-Transformer\dataset\test\OPA"
+    src_C1 = r"D:\Documents\Data\PNG512\dataset\train\OPA"
+    src_C2 = r"D:\Documents\Data\PNG512\dataset\val\OPA"
+    src_C3 = r"D:\Documents\Data\PNG512\dataset\test\OPA"
+
+    dst_C1 = r"D:\Documents\Swin-Transformer\dataset\train\OPA"
+    dst_C2 = r"D:\Documents\Swin-Transformer\dataset\val\OPA"
+    dst_C3 = r"D:\Documents\Swin-Transformer\dataset\test\OPA"
 
     # ===============================================
 

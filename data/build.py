@@ -3,6 +3,7 @@
 import os
 import torch
 import numpy as np
+import pandas as pd
 from torchvision import datasets, transforms
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.data import Mixup
@@ -28,6 +29,89 @@ try:
 except:
     from timm.data.transforms import _pil_interp
 
+class ClinicalDatasetWrapper(torch.utils.data.Dataset):
+    """
+    包装器：同时返回 (Image, ClinicalData) 和 Target
+    """
+    def __init__(self, dataset, csv_path, clinical_dim=4):
+        self.dataset = dataset
+        self.csv_path = csv_path
+
+        print(f"====== [Dataset] Loading Clinical Data from: {csv_path} ======")
+
+        # 1. 读取 CSV
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"Clinical CSV not found at {csv_path}. Please check config.MODEL.FUSION.CSV_PATH")
+
+        df = pd.read_csv(csv_path)
+
+        # 2. 预处理逻辑 (根据你的实际数据调整)
+        # 假设 CSV 列名是: filename, age, gender, height, weight ...
+        # 这里进行简单的归一化处理 (Z-Score)
+        # 注意：你需要根据实际 CSV 的列名修改这里的逻辑！
+
+        # 示例：查找数值列
+        # 假设我们要用的列是 csv 的第 1, 2, 3, 4 列 (第0列是文件名)
+        # 或者你可以硬编码列名，例如 ['age', 'gender', 'height', 'weight']
+
+        # 为了通用性，我们这里假设除第一列(文件名)外的所有列都是特征
+        # 实际使用时，建议硬编码列名以防出错
+        feature_cols = df.columns[1:1+clinical_dim]
+        print(f"Using clinical features: {list(feature_cols)}")
+
+        # 归一化 (跳过非数值列)
+        for col in feature_cols:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                mean, std = df[col].mean(), df[col].std()
+                df[col] = (df[col] - mean) / (std + 1e-6)
+                df[col] = df[col].fillna(0) # 填充缺失值
+            else:
+                # 如果是字符串(如 Gender='M'/'F')，需要自行转换为数字
+                # 这里简单示例：转为 categorical code
+                df[col] = df[col].astype('category').cat.codes
+
+        # 3. 构建映射字典: filename -> tensor
+        self.clin_map = {}
+        for idx, row in df.iterrows():
+            # 获取文件名 (去除路径，只留 basename)
+            # 假设第0列是文件名/路径
+            fname_key = os.path.basename(str(row.iloc[0]))
+
+            # 提取特征
+            feats = row[feature_cols].values.astype(np.float32)
+            self.clin_map[fname_key] = torch.tensor(feats, dtype=torch.float32)
+
+        print(f"Loaded {len(self.clin_map)} clinical records.")
+
+    def __getitem__(self, index):
+        # 1. 获取原始图片和标签
+        img, target = self.dataset[index]
+
+        # 2. 获取文件名
+        # 不同 Dataset 获取文件名的方式不同，这里做兼容处理
+        filename = "unknown"
+        if hasattr(self.dataset, 'samples'):
+            # ImageFolder 或 CachedImageFolder
+            full_path = self.dataset.samples[index][0]
+            filename = os.path.basename(full_path)
+        elif hasattr(self.dataset, 'imgs'):
+            full_path = self.dataset.imgs[index][0]
+            filename = os.path.basename(full_path)
+
+        # 3. 查找临床特征
+        if filename in self.clin_map:
+            clin_data = self.clin_map[filename]
+        else:
+            # 如果找不到，返回全0向量 (代表平均人)
+            # print(f"Warning: No clinical data for {filename}")
+            clin_data = torch.zeros(len(next(iter(self.clin_map.values()))), dtype=torch.float32)
+
+        # 返回格式：((img, clin_data), target)
+        # 注意：这样修改后，Mixup 和 Training Loop 需要相应调整！
+        return (img, clin_data), target
+
+    def __len__(self):
+        return len(self.dataset)
 
 def build_loader(config):
     # 1. 构建数据集
@@ -113,6 +197,26 @@ def build_dataset(is_train, config):
         nb_classes = len(dataset.classes)
     else:
         nb_classes = 1000
+
+    # [新增逻辑] 临床数据融合包装 (H-CQA Support)
+    # =================================================================
+    if config.MODEL.FUSION.ENABLED:
+        csv_path = config.MODEL.FUSION.CSV_PATH
+        # 如果配置里没写路径，使用默认值
+        if not csv_path:
+            csv_path = os.path.join('toolkit', 'clinical_data.csv')
+
+        # 只有当 CSV 文件真的存在时才包装，否则报错或警告
+        if os.path.exists(csv_path):
+            print(f"====== [Build Dataset] Wrapping dataset with Clinical Data ({prefix}) ======")
+            dataset = ClinicalDatasetWrapper(
+                dataset,
+                csv_path=csv_path,
+                clinical_dim=config.MODEL.FUSION.CLINICAL_DIM
+            )
+        else:
+            raise FileNotFoundError(f"Fusion enabled but CSV not found at: {csv_path}")
+    # =================================================================
 
     return dataset, nb_classes
 

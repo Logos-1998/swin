@@ -54,7 +54,12 @@ def build_model(config, is_pretrain=False):
                                   pretrained_window_sizes=config.MODEL.SWINV2.PRETRAINED_WINDOW_SIZES,
                                   use_esc=config.MODEL.SWINV2.USE_ESC,
                                   esc_pdim=config.MODEL.SWINV2.ESC_PDIM,
-                                  esc_kernel_size=config.MODEL.SWINV2.ESC_KERNEL_SIZE)
+                                  esc_kernel_size=config.MODEL.SWINV2.ESC_KERNEL_SIZE,
+                                  # ================== [新增融合参数] ==================
+                                  # 将配置里的 FUSION.ENABLED 传给 use_fusion
+                                  use_fusion=config.MODEL.FUSION.ENABLED,
+                                  # 将配置里的 FUSION.CLINICAL_DIM 传给 fusion_clinical_dim
+                                  fusion_clinical_dim=config.MODEL.FUSION.CLINICAL_DIM)
     else:
         raise NotImplementedError(f"Unknown model: {model_type}")
 

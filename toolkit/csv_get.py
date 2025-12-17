@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 # ================= 配置区域 =================
 # 您的数据集根目录 (包含 train/ 和 val/ 文件夹)
+# DATA_ROOT = r'D:\Documents\Swin-Transformer\dataset'
 DATA_ROOT = r'D:\Documents\Swin-Transformer\dataset'
 
 # 您的临床信息 Excel 文件路径
