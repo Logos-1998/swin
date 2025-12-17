@@ -1,14 +1,15 @@
 DATA:
   DATASET: 'custom'
-  DATA_PATH: 'D:\Documents\Swin-Transformer\dataset'
+
+  DATA_PATH: 'dataset'
   IMG_SIZE: 256
-  BATCH_SIZE: 2
+  BATCH_SIZE: 16
   NUM_WORKERS: 0
   PIN_MEMORY: True
 
 MODEL:
   TYPE: 'swinv2'
-  NAME: 'debug_swinv2_fusion'
+  NAME: 'debug_integration_test'
   NUM_CLASSES: 3
   DROP_PATH_RATE: 0.1
 
@@ -18,22 +19,22 @@ MODEL:
     NUM_HEADS: [3, 6, 12, 24]
     WINDOW_SIZE: 8
 
-    #
+
     USE_ESC: True
     ESC_PDIM: 16
     ESC_KERNEL_SIZE: 13
-    # ===================
 
-  # ===
+
+
   FUSION:
     ENABLED: True
     CLINICAL_DIM: 4
 
-    CSV_PATH: 'D:\Documents\Swin-Transformer\dataset\clinical_data.csv'
-  # ===============================
+    CSV_PATH: 'dataset/clinical_data.csv'
+
 
 TRAIN:
-  EPOCHS: 1
+  EPOCHS: 5
   WARMUP_EPOCHS: 0
   BASE_LR: 1e-4
   WEIGHT_DECAY: 0.05
@@ -41,9 +42,12 @@ TRAIN:
     NAME: 'adamw'
 
 
+  EARLY_STOPPING:
+    ENABLED: True
+    PATIENCE: 3
+
+
 AUG:
   MIXUP: 0.0
   CUTMIX: 0.0
   MIXUP_PROB: 0.0
-  CUTMIX_MINMAX: null
-# ===============================

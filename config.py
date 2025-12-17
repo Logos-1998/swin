@@ -133,6 +133,11 @@ _C.TRAIN.OPTIMIZER.BETAS = (0.9, 0.999)
 # SGD momentum
 _C.TRAIN.OPTIMIZER.MOMENTUM = 0.9
 
+_C.TRAIN.EARLY_STOPPING = CN()
+_C.TRAIN.EARLY_STOPPING.ENABLED = True
+_C.TRAIN.EARLY_STOPPING.PATIENCE = 10       # 容忍多少个 epoch 指标不提升
+_C.TRAIN.EARLY_STOPPING.MIN_DELTA = 0.0001  # 认为是提升的最小变化量
+
 # -----------------------------------------------------------------------------
 # Augmentation settings
 # -----------------------------------------------------------------------------

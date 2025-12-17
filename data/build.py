@@ -37,51 +37,58 @@ class ClinicalDatasetWrapper(torch.utils.data.Dataset):
         self.dataset = dataset
         self.csv_path = csv_path
 
-        print(f"====== [Dataset] Loading Clinical Data from: {csv_path} ======")
+        print(f"====== [Dataset] Initializing Clinical Data Fusion ======")
+        print(f"Loading CSV from: {csv_path}")
 
-        # 1. 读取 CSV
         if not os.path.exists(csv_path):
-            raise FileNotFoundError(f"Clinical CSV not found at {csv_path}. Please check config.MODEL.FUSION.CSV_PATH")
+            raise FileNotFoundError(f"Critical Error: Clinical CSV not found at {csv_path}")
 
+        # 读取 CSV
         df = pd.read_csv(csv_path)
 
-        # 2. 预处理逻辑 (根据你的实际数据调整)
-        # 假设 CSV 列名是: filename, age, gender, height, weight ...
-        # 这里进行简单的归一化处理 (Z-Score)
-        # 注意：你需要根据实际 CSV 的列名修改这里的逻辑！
+        # -----------------------------------------------------------
+        # [核心修复] 明确指定要使用的列名，不再使用索引切片
+        # 你的 CSV 结构: image_path, patient_id, age, gender, height, weight
+        # -----------------------------------------------------------
+        # 这种写法最稳健，不管你前面插入多少个ID列，都不会错
+        target_features = ['age', 'gender', 'height', 'weight']
 
-        # 示例：查找数值列
-        # 假设我们要用的列是 csv 的第 1, 2, 3, 4 列 (第0列是文件名)
-        # 或者你可以硬编码列名，例如 ['age', 'gender', 'height', 'weight']
+        # 检查这些列是否都在 CSV 里
+        missing_cols = [c for c in target_features if c not in df.columns]
+        if missing_cols:
+            raise ValueError(f"CSV is missing required columns: {missing_cols}")
 
-        # 为了通用性，我们这里假设除第一列(文件名)外的所有列都是特征
-        # 实际使用时，建议硬编码列名以防出错
-        feature_cols = df.columns[1:1+clinical_dim]
-        print(f"Using clinical features: {list(feature_cols)}")
+        feature_cols = target_features
+        print(f"Target clinical features ({len(feature_cols)}): {list(feature_cols)}")
 
-        # 归一化 (跳过非数值列)
+        # 简单的数据清洗与归一化 (Z-Score)
         for col in feature_cols:
+            # 确保是数值类型
             if pd.api.types.is_numeric_dtype(df[col]):
+                # 填充 NaN
+                df[col] = df[col].fillna(df[col].mean())
+                # 归一化
                 mean, std = df[col].mean(), df[col].std()
-                df[col] = (df[col] - mean) / (std + 1e-6)
-                df[col] = df[col].fillna(0) # 填充缺失值
+                if std > 1e-6:
+                    df[col] = (df[col] - mean) / std
             else:
-                # 如果是字符串(如 Gender='M'/'F')，需要自行转换为数字
-                # 这里简单示例：转为 categorical code
+                # 非数值类型 (如 'M'/'F') 简单编码
                 df[col] = df[col].astype('category').cat.codes
 
-        # 3. 构建映射字典: filename -> tensor
+        # -----------------------------------------------------------
+        # 建立索引映射: Filename (Base) -> Clinical Tensor
+        # -----------------------------------------------------------
         self.clin_map = {}
         for idx, row in df.iterrows():
-            # 获取文件名 (去除路径，只留 basename)
-            # 假设第0列是文件名/路径
-            fname_key = os.path.basename(str(row.iloc[0]))
+            # 获取纯文件名 (去除路径) 用于匹配
+            # 你的第0列是 image_path
+            fname = os.path.basename(str(row['image_path']))
 
-            # 提取特征
+            # 提取特征向量
             feats = row[feature_cols].values.astype(np.float32)
-            self.clin_map[fname_key] = torch.tensor(feats, dtype=torch.float32)
+            self.clin_map[fname] = torch.tensor(feats, dtype=torch.float32)
 
-        print(f"Loaded {len(self.clin_map)} clinical records.")
+        print(f"Successfully mapped {len(self.clin_map)} clinical records.")
 
     def __getitem__(self, index):
         # 1. 获取原始图片和标签

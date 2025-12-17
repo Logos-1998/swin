@@ -1,0 +1,30 @@
+DATA:
+  DATA_PATH: 'dataset'
+  IMG_SIZE: 256
+  BATCH_SIZE: 16
+
+MODEL:
+  TYPE: 'swinv2'
+  NAME: 'exp2_esc'
+  NUM_CLASSES: 3
+
+  SWINV2:
+    EMBED_DIM: 96
+    DEPTHS: [2, 2, 6, 2]
+    NUM_HEADS: [3, 6, 12, 24]
+    WINDOW_SIZE: 8
+
+
+    USE_ESC: True
+    ESC_PDIM: 16
+    ESC_KERNEL_SIZE: 13
+
+
+  FUSION:
+    ENABLED: False
+
+TRAIN:
+  EPOCHS: 100
+  EARLY_STOPPING:
+    ENABLED: True
+    PATIENCE: 15
