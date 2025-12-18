@@ -103,14 +103,17 @@ def load_checkpoint(config, model, optimizer, lr_scheduler, logger=None):
     return 0.0
 
 
-def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger=None):
+def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, is_best=False, logger=None):
+    """
+    保存模型检查点
+    Args:
+        is_best (bool): [修复] 增加 is_best 参数，用于判断是否保存最佳模型
+    """
     if logger is None:
         class PrintLogger:
             def info(self, msg): print(f"[INFO] {msg}")
         logger = PrintLogger()
-    """
-    保存模型检查点
-    """
+
     save_state = {
         'model': model.state_dict(),
         'optimizer': optimizer.state_dict(),
@@ -120,13 +123,15 @@ def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler,
         'config': config,
     }
 
-    save_path = os.path.join(config.OUTPUT, f'ckpt_epoch_{epoch}.pth')
-    logger.info(f"{save_path} saving......")
-    torch.save(save_state, save_path)
-    logger.info(f"{save_path} saved !!!")
+    # 1. 保存最新的 checkpoint (覆盖式，用于断点续训)
+    last_path = os.path.join(config.OUTPUT, 'checkpoint_last.pth')
+    torch.save(save_state, last_path)
 
-    # 另外保存一份 best_checkpoint
-    # (逻辑通常在 main 里控制，这里只负责保存指定文件)
+    # 2. 如果是最佳模型，额外保存
+    if is_best:
+        best_path = os.path.join(config.OUTPUT, 'checkpoint_best.pth')
+        torch.save(save_state, best_path)
+        logger.info(f"🌟 Saved new best model to {best_path} (Acc: {max_accuracy * 100:.2f}%)")
 
 class EarlyStopping:
     """
@@ -296,50 +301,44 @@ class MetricLogger(object):
         self.meters[name] = meter
 
     def log_every(self, iterable, print_freq, header=None):
+        """
+        [修改版] 使用 tqdm 实现进度条模式
+        """
+        from tqdm import tqdm
+
         i = 0
         if not header:
             header = ''
-        start_time = time.time()
-        end = time.time()
-        iter_time = SmoothedValue(fmt='{avg:.4f}')
-        data_time = SmoothedValue(fmt='{avg:.4f}')
-        space_fmt = ':' + str(len(str(len(iterable)))) + 'd'
-        log_msg = [
-            header,
-            '[{0' + space_fmt + '}/{1}]',
-            'eta: {eta}',
-            '{meters}',
-            'time: {time}',
-            'data: {data}'
-        ]
-        if torch.cuda.is_available():
-            log_msg.append('max mem: {memory:.0f}')
-        log_msg = self.delimiter.join(log_msg)
-        MB = 1024.0 * 1024.0
-        for obj in iterable:
-            data_time.update(time.time() - end)
+
+        # 1. 创建 tqdm 进度条
+        # ncols=0 让它自动适应控制台宽度
+        # leave=True 跑完一个 epoch 后保留这一行记录
+        pbar = tqdm(iterable, desc=header, leave=True, ncols=0)
+
+        for obj in pbar:
+            # 2. 将数据交还给 engine.py 进行训练
             yield obj
-            iter_time.update(time.time() - end)
-            if i % print_freq == 0 or i == len(iterable) - 1:
-                eta_seconds = iter_time.global_avg * (len(iterable) - i)
-                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
-                if torch.cuda.is_available():
-                    print(log_msg.format(
-                        i, len(iterable), eta=eta_string,
-                        meters=str(self),
-                        time=str(iter_time), data=str(data_time),
-                        memory=torch.cuda.max_memory_allocated() / MB))
-                else:
-                    print(log_msg.format(
-                        i, len(iterable), eta=eta_string,
-                        meters=str(self),
-                        time=str(iter_time), data=str(data_time)))
+
+            # 3. 训练完一个 batch 后，更新进度条上的指标
+            # 构造要显示的字典
+            logs = {}
+
+            # 优先显示 Loss 和 Acc (Global Average)
+            if 'loss' in self.meters:
+                logs['loss'] = f"{self.meters['loss'].global_avg:.4f}"
+            if 'acc' in self.meters:
+                logs['acc'] = f"{self.meters['acc'].global_avg * 100:.2f}%"
+            if 'lr' in self.meters:
+                logs['lr'] = f"{self.meters['lr'].value:.6f}"
+
+            # 如果你想看显存，也可以加进去，但为了清爽建议不加
+            # if torch.cuda.is_available():
+            #     logs['mem'] = f"{torch.cuda.max_memory_allocated() / 1024.0 / 1024.0:.0f}M"
+
+            # 设置进度条后缀
+            pbar.set_postfix(logs)
+
             i += 1
-            end = time.time()
-        total_time = time.time() - start_time
-        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        print('{} Total time: {} ({:.4f} s / it)'.format(
-            header, total_time_str, total_time / len(iterable)))
 
 
 def accuracy(output, target, topk=(1,)):

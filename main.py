@@ -26,7 +26,7 @@ def parse_option():
     # -----------------------------------------------------------
     # 1. 基础与路径参数
     # -----------------------------------------------------------
-    parser.add_argument('--cfg', type=str, default = r'D:\Documents\Swin-Transformer\configs\debug_integration.yaml', metavar="FILE", help='path to config file')
+    parser.add_argument('--cfg', type=str, default = r'E:\WM\Swin-Transformer\configs\exp1_baseline.yaml', metavar="FILE", help='path to config file')
     parser.add_argument(
         "--opts",
         help="Modify config options by adding 'KEY VALUE' pairs. ",
@@ -119,6 +119,41 @@ def main(config):
     print(f"📂 Classes: {class_names}")
     print(f"✅ Data loaded: Train={len(dataset_train)}, Val={len(dataset_val)}")
 
+    print("⚖️ Calculating class weights for Weighted Loss...")
+
+    # 1. 获取所有训练标签
+    # 注意：dataset_train 可能是 Wrapper，需要剥离取出底层的 ImageFolder 的 targets
+    if hasattr(dataset_train, 'dataset') and hasattr(dataset_train.dataset, 'targets'):
+        # Wrapper 模式
+        train_targets = dataset_train.dataset.targets
+    elif hasattr(dataset_train, 'targets'):
+        # 普通 ImageFolder 模式
+        train_targets = dataset_train.targets
+    else:
+        # 兜底：如果实在拿不到，只能遍历一遍 (比较慢，但安全)
+        print("   Warning: Iterating dataset to count classes (slow)...")
+        train_targets = []
+        for _, t in dataset_train:
+            train_targets.append(t)
+
+    # 2. 统计数量
+    class_counts = np.bincount(train_targets)
+    total_samples = len(train_targets)
+    num_classes = len(class_counts)
+
+    # 打印分布
+    print(f"   Class Distribution: {dict(zip(class_names, class_counts))}")
+
+    # 3. 计算权重: Weight = Total / (NumClasses * Count)
+    # 数量越少，权重越大
+    weights = total_samples / (num_classes * class_counts + 1e-6) # 加微小值防除零
+
+    # 4. 转为 Tensor 并移动到 GPU
+    class_weights = torch.tensor(weights, dtype=torch.float).to(device)
+    print(f"   Computed Weights: {class_weights.cpu().numpy()}")
+    print("   -> Weighted Loss Enabled!")
+    # -----------------------------------------------------------
+
     # 3. 构建模型
     print(f"Creating model: {config.MODEL.TYPE}/{config.MODEL.NAME}")
     model = build_model(config)
@@ -173,25 +208,28 @@ def main(config):
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
 
         # 训练一个 Epoch
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
         train_stats = train_one_epoch(
-            config, model, torch.nn.CrossEntropyLoss(), data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler
+            config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler,
+            class_names=class_names
         )
         train_losses.append(train_stats['loss'])
 
         # 验证
-        val_stats = validate(config, data_loader_val, model)
+        val_stats = validate(config, data_loader_val, model, class_names=class_names)
         val_losses.append(val_stats['loss'])
         acc1 = val_stats['acc']
 
         # REQ 3: 只保存最佳权重 (Best) 和 最新权重 (Last)
         is_best = acc1 > max_accuracy
         if is_best:
-            print(f"🔥 New best accuracy: {acc1:.2f}% (was {max_accuracy:.2f}%)")
             max_accuracy = acc1
+            # [修正] 乘以 100
+            print(f"🔥 New best accuracy: {max_accuracy * 100:.2f}%")
 
         save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, is_best=is_best, logger=None)
 
-        print(f"Epoch {epoch} Summary | Train Loss: {train_stats['loss']:.4f} | Val Loss: {val_stats['loss']:.4f} | Val Acc: {acc1:.2f}%")
+        print(f"Epoch {epoch} Summary | Train Loss: {train_stats['loss']:.4f} | Val Loss: {val_stats['loss']:.4f} | Val Acc: {acc1 * 100:.2f}%")
 
         # Check Early Stopping
         if early_stopper:

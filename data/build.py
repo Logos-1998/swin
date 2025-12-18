@@ -230,6 +230,11 @@ def build_dataset(is_train, config):
 
 def build_transform(is_train, config):
     resize_im = config.DATA.IMG_SIZE > 32
+    # [新增] 从配置获取归一化参数
+    # 如果 config 中没设置，理论上 config.py 会给默认值，所以这里直接用
+    mean = config.DATA.MEAN if config.DATA.MEAN else IMAGENET_DEFAULT_MEAN
+    std = config.DATA.STD if config.DATA.STD else IMAGENET_DEFAULT_STD
+
     if is_train:
         transform = create_transform(
             input_size=config.DATA.IMG_SIZE,
@@ -240,6 +245,8 @@ def build_transform(is_train, config):
             re_mode=config.AUG.REMODE,
             re_count=config.AUG.RECOUNT,
             interpolation=config.DATA.INTERPOLATION,
+            mean=mean,  # [修改] 传入自定义 mean
+            std=std,    # [修改] 传入自定义 std
         )
         if not resize_im:
             transform.transforms[0] = transforms.RandomCrop(config.DATA.IMG_SIZE, padding=4)
@@ -262,5 +269,5 @@ def build_transform(is_train, config):
             )
 
     t.append(transforms.ToTensor())
-    t.append(transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD))
+    t.append(transforms.Normalize(mean, std))
     return transforms.Compose(t)
