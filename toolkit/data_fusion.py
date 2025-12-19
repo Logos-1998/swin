@@ -227,11 +227,11 @@ def main():
 
     tasks = [
         # A组
-        (src_A1, src_A2, src_A3, dst_A1, dst_A2, dst_A3, 0.5, "01"),
+        (src_A1, src_A2, src_A3, dst_A1, dst_A2, dst_A3, 1, "01"),
         # B组
-        (src_B1, src_B2, src_B3, dst_B1, dst_B2, dst_B3, 0.5, "02"),
+        (src_B1, src_B2, src_B3, dst_B1, dst_B2, dst_B3, 1, "02"),
         # C组
-        (src_C1, src_C2, src_C3, dst_C1, dst_C2, dst_C3, 0.5, "03"),
+        (src_C1, src_C2, src_C3, dst_C1, dst_C2, dst_C3, 1, "03"),
     ]
 
     # ===========================================

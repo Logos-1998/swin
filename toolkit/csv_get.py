@@ -7,10 +7,10 @@ from tqdm import tqdm
 # ================= 配置区域 =================
 # 您的数据集根目录 (包含 train/ 和 val/ 文件夹)
 # DATA_ROOT = r'D:\Documents\Swin-Transformer\dataset'
-DATA_ROOT = r'D:\Documents\Swin-Transformer\dataset'
+DATA_ROOT = r'E:\WM\Swin-Transformer\dataset'
 
 # 您的临床信息 Excel 文件路径
-EXCEL_PATH = r'D:\Documents\Swin-Transformer\original_usable_dta.xlsx'
+EXCEL_PATH = r'E:\WM\Swin-Transformer\original_usable_dta.xlsx'
 
 # 输出的 CSV 文件路径
 OUTPUT_CSV = './clinical_data.csv'
