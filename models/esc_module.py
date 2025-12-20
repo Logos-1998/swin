@@ -120,8 +120,8 @@ class ESCSwinBlock(nn.Module):
         self.norm2 = LayerNorm(dim, data_format="channels_first")
         self.mlp = ConvFFN(dim, kernel_size=3, exp_ratio=mlp_ratio)
 
-        from timm.models.layers import DropPath
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        import timm.layers
+        self.drop_path = timm.layers.DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
     def forward(self, x, lk_filter):
         H, W = self.input_resolution

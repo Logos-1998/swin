@@ -12,7 +12,7 @@ def calculate_per_class_metrics(y_true, y_pred):
     precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
     return precision, recall, f1
 
-def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mixup_fn, lr_scheduler):
+def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mixup_fn, lr_scheduler, class_names=None):
     model.train()
     optimizer.zero_grad()
 
@@ -67,22 +67,35 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
     # REQ 7: Epoch 结束时输出训练集各类别指标
     print(f"\n--- Train Epoch {epoch} Detailed Metrics ---")
     p, r, f, _ = precision_recall_fscore_support(all_targets, all_preds, average=None, zero_division=0)
-    print(f"   Classes: {list(range(len(p)))}")
-    print(f"   Precis : {np.round(p, 4)}")
-    print(f"   Recall : {np.round(r, 4)}")
-    print(f"   F1 Score: {np.round(f, 4)}")
-    print(f"   Global Acc: {accuracy_score(all_targets, all_preds):.4f}")
+
+    # 如果没传 class_names，就用数字兜底
+    if class_names is None:
+        class_names = [str(i) for i in range(len(p))]
+
+    # 为了排版美观，使用字典格式打印，或者简单的对齐打印
+    # 这里使用简单的对齐打印
+    print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
+    print("-" * 55)
+    for i, name in enumerate(class_names):
+        # 防止类别数不匹配的边界情况
+        if i < len(p):
+            print(f"{name:<15} {p[i]*100:<12.2f} {r[i]*100:<12.2f} {f[i]*100:<12.2f}")
+
+    print("-" * 45)
+    acc_val = accuracy_score(all_targets, all_preds)
+    # [修正] Global Acc 显示百分比
+    print(f"Global Acc: {acc_val * 100:.2f}%\n")
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
 @torch.no_grad()
-def validate(config, data_loader, model):
+def validate(config, data_loader, model, class_names=None):
     criterion = nn.CrossEntropyLoss()
     model.eval()
 
     metric_logger = MetricLogger(delimiter="  ")
-    header = 'Test:'
+    header = 'Val:'
 
     all_preds = []
     all_targets = []
@@ -116,14 +129,20 @@ def validate(config, data_loader, model):
         all_preds.extend(output.argmax(dim=1).cpu().numpy())
         all_targets.extend(targets.cpu().numpy())
 
-    # REQ 7: 输出验证集各类别指标
+    # --- [修复] 优化输出显示 ---
     print(f"\n--- Val Detailed Metrics ---")
     p, r, f, _ = precision_recall_fscore_support(all_targets, all_preds, average=None, zero_division=0)
-    print(f"   Precis : {np.round(p, 4)}")
-    print(f"   Recall : {np.round(r, 4)}")
-    print(f"   F1 Score: {np.round(f, 4)}")
 
-    # 返回丰富的数据供 Main 函数画图
+    if class_names is None:
+        class_names = [str(i) for i in range(len(p))]
+
+    print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
+    print("-" * 55)
+    for i, name in enumerate(class_names):
+        if i < len(p):
+            print(f"{name:<15} {p[i]*100:<12.2f} {r[i]*100:<12.2f} {f[i]*100:<12.2f}")
+    print("-" * 55 + "\n")
+
     return {
         'loss': metric_logger.loss.global_avg,
         'acc': metric_logger.acc.global_avg,
