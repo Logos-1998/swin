@@ -1,17 +1,21 @@
 # Swin-Transformer/optimizer.py
-
 from torch import optim as optim
 
 def build_optimizer(config, model):
     """
     构建优化器 (AdamW)
-    支持 Layer-wise learning rate decay (Swin 特性)
+    修复：引入参数分组，确保 bias 和 norm 等参数不进行 Weight Decay
     """
-    # 1. 过滤不需要梯度的参数 (Frozen parameters)
-    parameters = filter(lambda p: p.requires_grad, model.parameters())
+    # 1. 获取模型定义的排除列表
+    skip = {}
+    skip_keywords = {}
+    if hasattr(model, 'no_weight_decay'):
+        skip = model.no_weight_decay()
+    if hasattr(model, 'no_weight_decay_keywords'):
+        skip_keywords = model.no_weight_decay_keywords()
 
-    # (注: 如果想要对 ClinicalHead 使用不同的学习率，可以在这里分组)
-    # 暂时使用全局统一配置
+    # 2. 对参数进行分组
+    parameters = set_weight_decay(model, skip, skip_keywords)
 
     opt_lower = config.TRAIN.OPTIMIZER.NAME.lower()
     optimizer = None
@@ -27,7 +31,34 @@ def build_optimizer(config, model):
 
     return optimizer
 
-def check_keywords_in_name(name, keywords):
+def set_weight_decay(model, skip_list=(), skip_keywords=()):
+    """
+    将参数分为需要 decay 和不需要 decay 的两组
+    参考官方实现逻辑
+    """
+    has_decay = []
+    no_decay = []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue  # 忽略冻结权重
+
+        # 满足以下任一条件则不进行 weight decay:
+        # 1. 维度为1 (如 bias, norm.weight, norm.bias)
+        # 2. 名称在排除列表中
+        # 3. 名称包含特定的排除关键字
+        if len(param.shape) == 1 or name.endswith(".bias") or (name in skip_list) or \
+                check_keywords_in_name(name, skip_keywords):
+            no_decay.append(param)
+        else:
+            has_decay.append(param)
+
+    return [
+        {'params': has_decay, 'weight_decay': 0.05}, # 这里的权重衰减值由配置决定
+        {'params': no_decay, 'weight_decay': 0.}      # 强制不衰减组
+    ]
+
+def check_keywords_in_name(name, keywords=()):
     for keyword in keywords:
         if keyword in name:
             return True

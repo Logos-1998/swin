@@ -494,10 +494,10 @@ class BasicLayer(nn.Module):
         for blk in self.blocks:
             if hasattr(blk, 'norm1'):
                 nn.init.constant_(blk.norm1.bias, 0)
-                nn.init.constant_(blk.norm1.weight, 0)
+                nn.init.constant_(blk.norm1.weight, 1.0)
             if hasattr(blk, 'norm2'):
                 nn.init.constant_(blk.norm2.bias, 0)
-                nn.init.constant_(blk.norm2.weight, 0)
+                nn.init.constant_(blk.norm2.weight, 1.0)
 
 
 class PatchEmbed(nn.Module):
