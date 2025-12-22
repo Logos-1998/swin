@@ -174,6 +174,11 @@ def main(config):
 
         print(f"Epoch {epoch} | Train Loss: {train_stats['loss']:.4f} | Val Loss: {val_stats['loss']:.4f} | Val Acc: {acc1 * 100:.2f}%")
 
+        if config.TRAIN.TARGET_ACC > 0.0 and acc1 >= config.TRAIN.TARGET_ACC:
+            print(f"\n🎯 Stop!!!")
+            print("停止训练...")
+            break
+
         if early_stopper:
             early_stopper(acc1, val_stats['loss'])
             if early_stopper.early_stop:
