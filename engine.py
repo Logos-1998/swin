@@ -24,29 +24,34 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
     all_targets = []
 
     for idx, (samples, targets) in enumerate(metric_logger.log_every(data_loader, 10, header)):
-        # 1. 数据解包
+        # --- 1. 数据解包与 GPU 搬运 ---
         if config.MODEL.FUSION.ENABLED:
+            # samples 为 (images, clinical_data) 元组
             images, clinical_data = samples
-            images = images.cuda(non_blocking=True)
             clinical_data = clinical_data.cuda(non_blocking=True)
-            targets = targets.cuda(non_blocking=True)
         else:
-            images = samples.cuda(non_blocking=True)
-            targets = targets.cuda(non_blocking=True)
+            images = samples
             clinical_data = None
-            if mixup_fn is not None:
-                images, targets_mix = mixup_fn(images, targets)
 
-        # 2. 前向传播
-        if config.MODEL.FUSION.ENABLED:
-            output = model(images, clinical_data)
-        else:
-            output = model(images)
+        images = images.cuda(non_blocking=True)
+        targets = targets.cuda(non_blocking=True)
 
-        # 3. Loss 计算 (注意 Mixup 对 Label 的影响，这里简化处理，只监控 Raw Target)
-        # 如果用了 Mixup，targets_mix 用于算 Loss，但监控指标用原始 targets
-        loss = criterion(output, targets if mixup_fn is None else targets_mix)
+        # 保存原始标签（索引格式），用于 Acc 统计
+        # 因为 Mixup 会把 targets 变成概率分布
+        targets_orig = targets.clone()
 
+        # --- 2. Mixup 增强 (只针对图像和标签) ---
+        if mixup_fn is not None:
+            images, targets = mixup_fn(images, targets)
+
+        # --- 3. 前向传播 ---
+        # 我们的 SwinV2 模型 forward 接口已支持 clinical_data=None 传参
+        output = model(images, clinical_data=clinical_data)
+
+        # Loss 计算：如果用了 Mixup，targets 是 Soft Label
+        loss = criterion(output, targets)
+
+        # --- 4. 反向传播与优化 ---
         optimizer.zero_grad()
         loss.backward()
         if config.TRAIN.CLIP_GRAD:
@@ -54,36 +59,32 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
         optimizer.step()
         lr_scheduler.step_update(epoch * len(data_loader) + idx)
 
-        # 4. 收集数据用于 Epoch 结束时的统计
-        acc1 = (output.argmax(dim=1) == targets).float().mean()
+        # --- 5. 指标统计 ---
+        # 使用 targets_orig (原始索引) 来计算 Acc，排除 Mixup 干扰
+        acc1 = (output.argmax(dim=1) == targets_orig).float().mean()
+
         metric_logger.update(loss=loss.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(acc=acc1.item())
 
-        # 收集预测结果 (CPU)
         all_preds.extend(output.argmax(dim=1).cpu().numpy())
-        all_targets.extend(targets.cpu().numpy())
+        all_targets.extend(targets_orig.cpu().numpy())
 
-    # REQ 7: Epoch 结束时输出训练集各类别指标
+    # --- 6. Epoch 结束时输出详细报告 ---
     print(f"\n--- Train Epoch {epoch} Detailed Metrics ---")
     p, r, f, _ = precision_recall_fscore_support(all_targets, all_preds, average=None, zero_division=0)
 
-    # 如果没传 class_names，就用数字兜底
     if class_names is None:
         class_names = [str(i) for i in range(len(p))]
 
-    # 为了排版美观，使用字典格式打印，或者简单的对齐打印
-    # 这里使用简单的对齐打印
     print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
     print("-" * 55)
     for i, name in enumerate(class_names):
-        # 防止类别数不匹配的边界情况
         if i < len(p):
             print(f"{name:<15} {p[i]*100:<12.2f} {r[i]*100:<12.2f} {f[i]*100:<12.2f}")
 
-    print("-" * 45)
+    print("-" * 55)
     acc_val = accuracy_score(all_targets, all_preds)
-    # [修正] Global Acc 显示百分比
     print(f"Global Acc: {acc_val * 100:.2f}%\n")
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
@@ -91,6 +92,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
 
 @torch.no_grad()
 def validate(config, data_loader, model, class_names=None):
+    # 验证时不使用训练时的权重惩罚，使用标准交叉熵
     criterion = nn.CrossEntropyLoss()
     model.eval()
 
@@ -99,23 +101,22 @@ def validate(config, data_loader, model, class_names=None):
 
     all_preds = []
     all_targets = []
-    all_probs = [] # 存储概率用于 ROC
+    all_probs = []
 
     for idx, (samples, targets) in enumerate(metric_logger.log_every(data_loader, 10, header)):
+        # --- 数据解包 ---
         if config.MODEL.FUSION.ENABLED:
             images, clinical_data = samples
-            images = images.cuda(non_blocking=True)
             clinical_data = clinical_data.cuda(non_blocking=True)
         else:
-            images = samples.cuda(non_blocking=True)
+            images = samples
             clinical_data = None
 
+        images = images.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
 
-        if config.MODEL.FUSION.ENABLED:
-            output = model(images, clinical_data)
-        else:
-            output = model(images)
+        # --- 前向传播 ---
+        output = model(images, clinical_data=clinical_data)
 
         loss = criterion(output, targets)
         acc1 = (output.argmax(dim=1) == targets).float().mean()
@@ -123,13 +124,13 @@ def validate(config, data_loader, model, class_names=None):
         metric_logger.update(loss=loss.item())
         metric_logger.update(acc=acc1.item())
 
-        # 收集数据
+        # 收集概率数据用于 ROC/AUC 计算
         probs = torch.softmax(output, dim=1)
         all_probs.extend(probs.cpu().numpy())
         all_preds.extend(output.argmax(dim=1).cpu().numpy())
         all_targets.extend(targets.cpu().numpy())
 
-    # --- [修复] 优化输出显示 ---
+    # --- 输出验证集报告 ---
     print(f"\n--- Val Detailed Metrics ---")
     p, r, f, _ = precision_recall_fscore_support(all_targets, all_preds, average=None, zero_division=0)
 
