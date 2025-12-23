@@ -151,6 +151,8 @@ def main(config):
         verbose=True
     ) if config.TRAIN.EARLY_STOPPING.ENABLED else None
 
+    is_middle_saved = False
+
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
         # 训练 Epoch
         train_stats = train_one_epoch(
@@ -163,6 +165,13 @@ def main(config):
         val_stats = validate(config, data_loader_val, model, class_names=class_names)
         val_losses.append(val_stats['loss'])
         acc1 = val_stats['acc']
+
+        if config.TRAIN.MIDDLE_ACC > 0.0 and not is_middle_saved:
+            if acc1 >= config.TRAIN.MIDDLE_ACC:
+                print(f"\n🚩 Reached Middle Target ({config.TRAIN.MIDDLE_ACC*100:.1f}%)! Saving checkpoint_middle.pth...")
+                save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler,
+                                is_best=False, logger=None, filename='checkpoint_middle')
+                is_middle_saved = True
 
         # 保存策略
         is_best = acc1 > max_accuracy

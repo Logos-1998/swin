@@ -103,11 +103,12 @@ def load_checkpoint(config, model, optimizer, lr_scheduler, logger=None):
     return 0.0
 
 
-def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, is_best=False, logger=None):
+def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, is_best=False, logger=None, filename=None):
     """
     保存模型检查点
     Args:
         is_best (bool): [修复] 增加 is_best 参数，用于判断是否保存最佳模型
+        filename (str): [新增] 如果提供，则保存为特定的文件名（例如 'checkpoint_middle'），不执行默认的 last/best 逻辑
     """
     if logger is None:
         class PrintLogger:
@@ -122,6 +123,15 @@ def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler,
         'epoch': epoch,
         'config': config,
     }
+
+    # [新增] 如果指定了特定文件名，优先保存该文件并直接返回
+    if filename:
+        special_path = os.path.join(config.OUTPUT, f'{filename}.pth')
+        torch.save(save_state, special_path)
+        logger.info(f"💾 Saved specific checkpoint to {special_path}")
+        return
+
+    # --- 以下是原有的标准保存逻辑 ---
 
     # 1. 保存最新的 checkpoint (覆盖式，用于断点续训)
     last_path = os.path.join(config.OUTPUT, 'checkpoint_last.pth')

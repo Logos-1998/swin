@@ -4,13 +4,30 @@ import torch
 import torch.nn as nn
 from timm.utils import accuracy, AverageMeter
 import numpy as np
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 from utils import reduce_tensor, MetricLogger, SmoothedValue
 
 def calculate_per_class_metrics(y_true, y_pred):
     """辅助函数：计算简单的每类指标"""
     precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
     return precision, recall, f1
+
+def calculate_specificity(y_true, y_pred, labels):
+    """辅助函数：计算每类的特异度 (Specificity)"""
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+    specificity = []
+    for i in range(len(labels)):
+        # TN = 总样本 - (FP + FN + TP)
+        # 简化计算: TN = Total - (Row_i_Sum + Col_i_Sum - TP)
+        tn = np.sum(cm) - np.sum(cm[i, :]) - np.sum(cm[:, i]) + cm[i, i]
+        fp = np.sum(cm[:, i]) - cm[i, i]
+
+        if tn + fp == 0:
+            spec = 0.0
+        else:
+            spec = tn / (tn + fp)
+        specificity.append(spec)
+    return specificity
 
 def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mixup_fn, lr_scheduler, class_names=None):
     model.train()
@@ -70,20 +87,26 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, mix
         all_preds.extend(output.argmax(dim=1).cpu().numpy())
         all_targets.extend(targets_orig.cpu().numpy())
 
-    # --- 6. Epoch 结束时输出详细报告 ---
+    # --- 6. Epoch 结束时输出
     print(f"\n--- Train Epoch {epoch} Detailed Metrics ---")
     p, r, f, _ = precision_recall_fscore_support(all_targets, all_preds, average=None, zero_division=0)
 
-    if class_names is None:
-        class_names = [str(i) for i in range(len(p))]
+    # 确保 class_names 和 labels 对应
+    unique_labels = range(len(p))
+    specs = calculate_specificity(all_targets, all_preds, unique_labels)
 
-    print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
-    print("-" * 55)
+    if class_names is None:
+        class_names = [str(i) for i in unique_labels]
+
+    # [修改] 增加 Specificity 列
+    print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'Specificity':<12} {'F1-Score':<12}")
+    print("-" * 70) # 加长横线
     for i, name in enumerate(class_names):
         if i < len(p):
-            print(f"{name:<15} {p[i]*100:<12.2f} {r[i]*100:<12.2f} {f[i]*100:<12.2f}")
+            # [修改] 增加 specs[i] 输出
+            print(f"{name:<15} {p[i]*100:<12.2f} {r[i]*100:<12.2f} {specs[i]*100:<12.2f} {f[i]*100:<12.2f}")
 
-    print("-" * 55)
+    print("-" * 70)
     acc_val = accuracy_score(all_targets, all_preds)
     print(f"Global Acc: {acc_val * 100:.2f}%\n")
 
@@ -131,18 +154,23 @@ def validate(config, data_loader, model, class_names=None):
         all_targets.extend(targets.cpu().numpy())
 
     # --- 输出验证集报告 ---
+    # --- 输出验证集报告 ---
     print(f"\n--- Val Detailed Metrics ---")
     p, r, f, _ = precision_recall_fscore_support(all_targets, all_preds, average=None, zero_division=0)
 
-    if class_names is None:
-        class_names = [str(i) for i in range(len(p))]
+    unique_labels = range(len(p))
+    specs = calculate_specificity(all_targets, all_preds, unique_labels)
 
-    print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
-    print("-" * 55)
+    if class_names is None:
+        class_names = [str(i) for i in unique_labels]
+
+    # [修改] 增加 Specificity 列
+    print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'Specificity':<12} {'F1-Score':<12}")
+    print("-" * 70)
     for i, name in enumerate(class_names):
         if i < len(p):
-            print(f"{name:<15} {p[i]*100:<12.2f} {r[i]*100:<12.2f} {f[i]*100:<12.2f}")
-    print("-" * 55 + "\n")
+            print(f"{name:<15} {p[i]*100:<12.2f} {r[i]*100:<12.2f} {specs[i]*100:<12.2f} {f[i]*100:<12.2f}")
+    print("-" * 70 + "\n")
 
     return {
         'loss': metric_logger.loss.global_avg,
