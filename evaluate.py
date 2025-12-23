@@ -30,7 +30,7 @@ TEST_DATA_PATH = r"D:\Documents\Swin-Transformer\dataset\test"
 
 # 4. 结果保存目录
 OUTPUT_ROOT = r"D:\Documents\Swin-Transformer\results"
-SUB_FOLDER_NAME = ""
+SUB_FOLDER_NAME = "baseline"
 
 # ==============================================================================
 
@@ -126,7 +126,7 @@ def main():
 
     # --- 6. 推理与评估 ---
     print("🔥 Starting inference...")
-    final_stats = validate(config, data_loader_val, model)
+    final_stats = validate(config, data_loader_val, model, class_names=class_names)
 
     # --- 7. 绘图与报告 ---
     print("📊 Generating metrics...")
@@ -141,7 +141,7 @@ def main():
     except Exception as e:
         print(f"⚠️ Error during plotting: {e}")
 
-    print(f"\n✅ Done! Top-1 Acc: {final_stats['acc']:.2f}%")
+    print(f"\n✅ Done! Top-1 Acc: {final_stats['acc']:.4f}%")
 
 if __name__ == '__main__':
     main()

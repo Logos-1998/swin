@@ -393,29 +393,58 @@ def plot_confusion_matrix(y_true, y_pred, classes, output_dir):
     plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'))
     plt.close()
 
+# logos-1998/swin/swin-Experiment/utils.py 中的对应部分
+
 def plot_roc_curve(y_true, y_scores, classes, output_dir):
-    # y_true: (N,), y_scores: (N, NumClasses) (softmax probabilities)
-    # 需要处理 One-hot
     from sklearn.preprocessing import label_binarize
+    from sklearn.metrics import roc_curve, auc
+    import numpy as np
+
     n_classes = len(classes)
     y_true_bin = label_binarize(y_true, classes=range(n_classes))
 
-    plt.figure(figsize=(10, 8))
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+
+    # 计算每一类的 ROC
     for i in range(n_classes):
-        fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_scores[:, i])
-        roc_auc = auc(fpr, tpr)
-        plt.plot(fpr, tpr, lw=2, label=f'ROC curve (class {classes[i]}) (area = {roc_auc:.2f})')
+        fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_scores[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+
+    # --- 计算 Macro-average ROC ---
+    all_fpr = np.unique(np.concatenate([fpr[i] for i in range(n_classes)]))
+    mean_tpr = np.zeros_like(all_fpr)
+    for i in range(n_classes):
+        mean_tpr += np.interp(all_fpr, fpr[i], tpr[i])
+    mean_tpr /= n_classes
+
+    fpr["macro"] = all_fpr
+    tpr["macro"] = mean_tpr
+    roc_auc["macro"] = auc(fpr["macro"], tpr["macro"])
+
+    # --- 绘图 ---
+    plt.figure(figsize=(10, 8))
+    plt.plot(fpr["macro"], tpr["macro"],
+             label=f'macro-average ROC curve (area = {roc_auc["macro"]:.2f})',
+             color='navy', linestyle=':', linewidth=4)
+
+    for i in range(n_classes):
+        plt.plot(fpr[i], tpr[i], lw=2, label=f'ROC curve of class {classes[i]} (area = {roc_auc[i]:.2f})')
 
     plt.plot([0, 1], [0, 1], 'k--', lw=2)
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic (ROC)')
+    plt.title('Multi-class ROC (including Macro-average)')
     plt.legend(loc="lower right")
     plt.grid(True)
     plt.savefig(os.path.join(output_dir, 'roc_curve.png'))
     plt.close()
+
+    # --- 导出数据供外部绘图 ---
+    save_path = os.path.join(output_dir, 'roc_data.npz')
+    np.savez(save_path, fpr=fpr, tpr=tpr, auc=roc_auc, classes=classes)
+    print(f"📈 ROC 原始数据已导出至: {save_path}")
 
 def generate_classification_report(y_true, y_pred, classes, output_dir):
     report = classification_report(y_true, y_pred, target_names=classes, output_dict=True)
