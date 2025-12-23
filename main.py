@@ -24,7 +24,7 @@ def parse_option():
     parser = argparse.ArgumentParser('Swin Transformer V2 Training Script', add_help=False)
 
     # 1. 路径与配置参数
-    parser.add_argument('--cfg', type=str, default = r'D:\Documents\Swin-Transformer\configs\exp1_baseline.yaml', metavar="FILE", help='path to config file')
+    parser.add_argument('--cfg', type=str, default = r'E:\WM\Swin-Transformer\configs\exp1_baseline.yaml', metavar="FILE", help='path to config file')
     parser.add_argument("--opts", help="Modify config options", default=None, nargs='+')
     parser.add_argument('--data-path', type=str, help='path to dataset')
     parser.add_argument('--output', default='output', type=str, metavar='PATH', help='root output folder')
