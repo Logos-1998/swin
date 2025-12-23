@@ -24,7 +24,7 @@ def parse_option():
     parser = argparse.ArgumentParser('Swin Transformer V2 Training Script', add_help=False)
 
     # 1. 路径与配置参数
-    parser.add_argument('--cfg', type=str, default = r'D:\Documents\Swin-Transformer\configs\exp4_full.yaml', metavar="FILE", help='path to config file')
+    parser.add_argument('--cfg', type=str, default = r'D:\Documents\Swin-Transformer\configs\exp1_baseline.yaml', metavar="FILE", help='path to config file')
     parser.add_argument("--opts", help="Modify config options", default=None, nargs='+')
     parser.add_argument('--data-path', type=str, help='path to dataset')
     parser.add_argument('--output', default='output', type=str, metavar='PATH', help='root output folder')
@@ -194,7 +194,7 @@ def main(config):
     # 使用最佳权重运行最终测试
     best_path = os.path.join(final_output_dir, 'checkpoint_best.pth')
     if os.path.exists(best_path):
-        checkpoint = torch.load(best_path, map_location='cpu')
+        checkpoint = torch.load(best_path, map_location='cpu', weights_only=False)
         model.load_state_dict(checkpoint['model'])
 
     final_stats = validate(config, data_loader_val, model)
