@@ -10,6 +10,20 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\output\exp1_baseline_1\classification_report.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="\output\exp4_full_model\classification_report.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
       </map>
     </option>
   </component>

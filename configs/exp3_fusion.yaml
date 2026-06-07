@@ -8,7 +8,7 @@ DATA:
 
 MODEL:
   TYPE: 'swinv2'
-  NAME: 'exp3_fusion'
+  NAME: 'exp4_full'
   NUM_CLASSES: 3
 
   SWINV2:
