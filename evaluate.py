@@ -20,16 +20,16 @@ from utils import (
 # ==============================================================================
 
 # 1. 权重路径
-WEIGHT_PATH = r"D:\Documents\Swin-Transformer\output\exp1_baseline_1\checkpoint_best.pth"
+WEIGHT_PATH = r"D:\Documents\Swin-Transformer\K_for_5\output\exp1_baseline_1\checkpoint_best.pth"
 
 # 2. 配置文件路径
 CONFIG_PATH = r"D:\Documents\Swin-Transformer\configs\exp1_baseline.yaml"
 
 # 3. 测试集路径 (文件夹下直接是类别子文件夹，例如 dataset/test/0_normal)
-TEST_DATA_PATH = r"D:\Documents\Swin-Transformer\dataset\test"
+TEST_DATA_PATH = r"D:\Documents\Data\K_for_5\2\test"
 
 # 4. 结果保存目录
-OUTPUT_ROOT = r"D:\Documents\Swin-Transformer\results"
+OUTPUT_ROOT = r"D:\Documents\Swin-Transformer\K_for_5\results"
 SUB_FOLDER_NAME = "baseline"
 
 # ==============================================================================

@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import random
 import argparse
@@ -7,51 +8,43 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 
-# 引入项目定义的模块
+# 将父目录加入系统路径，以便在 K_for_5 文件夹中能够无缝导入原项目的底层模块
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import get_config
 from models import build_model
 from data import build_loader
 from optimizer import build_optimizer
 from lr_scheduler import build_scheduler
-from engine import train_one_epoch, validate
+
+# 【关键修改1】: 将训练和验证引擎的导入路径改为即将新建的 evaluate.py
+from evaluate import train_one_epoch, validate
+
 from utils import (
     load_checkpoint, save_checkpoint, auto_resume_helper, find_unique_output_dir,
     plot_loss_curve, plot_confusion_matrix, plot_roc_curve, generate_classification_report,
     EarlyStopping
 )
-
 import torch.nn.functional as F
 import torch.nn as nn
 
 class FocalLoss(nn.Module):
     def __init__(self, weight=None, gamma=2.0):
-        """
-        :param weight: 类别权重 (Alpha)，形状为 [num_classes]，处理类别不平衡
-        :param gamma: 聚焦参数 (Gamma)，通常设为 2.0，处理难易样本不平衡
-        """
         super(FocalLoss, self).__init__()
         self.weight = weight
         self.gamma = gamma
 
     def forward(self, inputs, targets):
-        # 1. 计算标准的交叉熵损失 (不进行均值化)
         ce_loss = F.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
-
-        # 2. 获取目标类别的预测概率 pt
         pt = torch.exp(-ce_loss)
-
-        # 3. 乘以调制系数 (1 - pt)^gamma
         focal_loss = ((1 - pt) ** self.gamma) * ce_loss
-
-        # 4. 返回整个 batch 的平均 loss
         return focal_loss.mean()
 
-
 def parse_option():
-    parser = argparse.ArgumentParser('Swin Transformer V2 Training Script', add_help=False)
+    parser = argparse.ArgumentParser('Swin Transformer V2 Training Script (K-Fold Adapted)', add_help=False)
 
     # 1. 路径与配置参数
-    parser.add_argument('--cfg', type=str, default = r'D:\Documents\Swin-Transformer\configs\exp3_fusion.yaml', metavar="FILE", help='path to config file')
+    parser.add_argument('--cfg', type=str, default=r'D:\Documents\Swin-Transformer\configs\exp2_esc.yaml', metavar="FILE", help='path to config file')
     parser.add_argument("--opts", help="Modify config options", default=None, nargs='+')
     parser.add_argument('--data-path', type=str, help='path to dataset')
     parser.add_argument('--output', default='output', type=str, metavar='PATH', help='root output folder')
@@ -119,13 +112,14 @@ def main(config):
 
     print(f"📂 Classes: {class_names}")
 
-    # --- 3. 类别权重计算 (用于非泄露数据的平衡) ---
+    # --- 3. 类别权重计算 ---
     if hasattr(dataset_train, 'dataset') and hasattr(dataset_train.dataset, 'targets'):
         train_targets = dataset_train.dataset.targets
     elif hasattr(dataset_train, 'targets'):
         train_targets = dataset_train.targets
     else:
-        train_targets = [t for _, t in dataset_train]
+        # 【关键修改2】: 兼容修改后的 Dataset 返回的 (sample, target, vertebra_id) 三元组解析
+        train_targets = [t for _, t, _ in dataset_train]
 
     class_counts = np.bincount(train_targets)
     weights = len(train_targets) / (len(class_counts) * class_counts + 1e-6)
@@ -138,20 +132,16 @@ def main(config):
     print(f"📊 Params: {sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.2f} M")
 
     # --- 5. 优化器与调度器 ---
-    # 已集成你修改后的参数分组逻辑 (见 optimizer.py)
     optimizer = build_optimizer(config, model)
     lr_scheduler = build_scheduler(config, optimizer, len(data_loader_train))
 
-    # --- 6. 损失函数 (核心修改：移出循环) ---
-    # 在“诊断阶段”建议将 use_weighted_loss 设为 False 以观察最原始的拟合能力
-    use_focal_loss = True  # 开启 Focal Loss
-
+    # --- 6. 损失函数 ---
+    # --- 6. 损失函数 (Focal Loss 解决不平衡与难样本) ---
+    use_focal_loss = False
     if use_focal_loss:
-        # gamma=2.0 是最优经验值，weight 传入了基于样本量计算好的平衡权重
-        criterion = FocalLoss(weight=class_weights, gamma=1.5)
+        criterion = FocalLoss(weight=class_weights, gamma=2.0)
         print("⚖️ Loss Mode: Focal Loss (Alpha-Weighted, Gamma=2.0)")
     else:
-        # 回退方案
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
         print("⚖️ Loss Mode: Weighted CrossEntropy")
 
@@ -168,7 +158,7 @@ def main(config):
         max_accuracy = load_checkpoint(config, model, optimizer, lr_scheduler, logger=None)
         if config.EVAL_MODE:
             final_stats = validate(config, data_loader_val, model, class_names=class_names)
-            print(f"Final Eval Accuracy: {final_stats['acc'] * 100:.2f}%")
+            print(f"Final Eval Accuracy (Vertebra-Level): {final_stats['acc'] * 100:.2f}%")
             return
 
     # --- 8. 训练循环 ---
@@ -184,14 +174,15 @@ def main(config):
     is_middle_saved = False
 
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
-        # 训练 Epoch
+
+        # 【关键修改3】: 将 mixup_fn 强制替换为 None，彻底关闭 Mixup，避免后续传入引擎时触发拆包异常
         train_stats = train_one_epoch(
-            config, model, criterion, data_loader_train, optimizer, epoch, mixup_fn, lr_scheduler,
+            config, model, criterion, data_loader_train, optimizer, epoch, None, lr_scheduler,
             class_names=class_names
         )
         train_losses.append(train_stats['loss'])
 
-        # 验证 Epoch
+        # 验证 Epoch (此处的 validate 将输出椎体级的聚合成级)
         val_stats = validate(config, data_loader_val, model, class_names=class_names)
         val_losses.append(val_stats['loss'])
         acc1 = val_stats['acc']
@@ -207,15 +198,31 @@ def main(config):
         is_best = acc1 > max_accuracy
         if is_best:
             max_accuracy = acc1
-            print(f"⭐ New Best Accuracy: {max_accuracy * 100:.2f}%")
+            print(f"⭐ New Best Accuracy (Vertebra-Level): {max_accuracy * 100:.2f}%")
 
         save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, is_best=is_best, logger=None)
 
         print(f"Epoch {epoch} | Train Loss: {train_stats['loss']:.4f} | Val Loss: {val_stats['loss']:.4f} | Val Acc: {acc1 * 100:.2f}%")
 
         if config.TRAIN.TARGET_ACC > 0.0 and acc1 >= config.TRAIN.TARGET_ACC:
-            print(f"\n🎯 Stop!!!")
-            print("停止训练...")
+            min_f1 = getattr(config.TRAIN, 'TARGET_MIN_F1', 0.0)
+
+            if min_f1 > 0.0 and 'f1_per_class' in val_stats:
+                f1_scores = val_stats['f1_per_class']
+
+                # 动态获取目标类别的索引（防止类别顺序变动）
+                op_idx = class_names.index('OP') if 'OP' in class_names else -1
+                opa_idx = class_names.index('OPA') if 'OPA' in class_names else -1
+
+                op_f1 = f1_scores[op_idx] if op_idx != -1 else 1.0
+                opa_f1 = f1_scores[opa_idx] if opa_idx != -1 else 1.0
+
+                # 如果有任何一个核心类的 F1 未达标，则跳过中断，继续训练
+                if (op_idx != -1 and op_f1 < min_f1) or (opa_idx != -1 and opa_f1 < min_f1):
+                    print(f"\n⚠️ 总体 ACC 达标 ({acc1*100:.2f}%)，但 OP_F1({op_f1:.4f}) 或 OPA_F1({opa_f1:.4f}) 未达 {min_f1} 阈值，继续挖掘难样本...")
+                    continue
+
+            print(f"\n🎯 总体 ACC 与各项核心 F1 均达标，完美停止!!!")
             break
 
         if early_stopper:
@@ -236,7 +243,8 @@ def main(config):
         checkpoint = torch.load(best_path, map_location='cpu', weights_only=False)
         model.load_state_dict(checkpoint['model'])
 
-    final_stats = validate(config, data_loader_val, model)
+    # 最终的椎体级指标计算与画图
+    final_stats = validate(config, data_loader_val, model, class_names=class_names)
     try:
         plot_confusion_matrix(final_stats['targets'], final_stats['preds'], class_names, final_output_dir)
         plot_roc_curve(final_stats['targets'], final_stats['probs'], class_names, final_output_dir)

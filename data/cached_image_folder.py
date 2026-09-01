@@ -147,16 +147,26 @@ class DatasetFolder(data.Dataset):
         Args:
             index (int): Index
         Returns:
-            tuple: (sample, target) where target is class_index of the target class.
+            tuple: (sample, target, vertebra_id)
         """
         path, target = self.samples[index]
+
+        # === 新增：解析椎体ID ===
+        import os
+        filename = os.path.basename(path)
+        parts = filename.split('_')
+        vertebra_id = f"{parts[0]}_{parts[1]}"
+        # =======================
+
+        # 以下完全保留您的原有逻辑
         sample = self.loader(path)
         if self.transform is not None:
             sample = self.transform(sample)
         if self.target_transform is not None:
             target = self.target_transform(target)
 
-        return sample, target
+        # === 修改返回值 ===
+        return sample, target, vertebra_id
 
     def __len__(self):
         return len(self.samples)

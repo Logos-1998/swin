@@ -11,6 +11,30 @@ from timm.data import create_transform
 from torchvision.transforms import InterpolationMode # [修改] 确保引入
 
 from .cached_image_folder import CachedImageFolder
+from torch.utils.data import Dataset
+import os
+
+class VertebraDatasetWrapper(Dataset):
+    def __init__(self, base_dataset):
+        self.base_dataset = base_dataset
+
+        # 新增以下三行：将基础数据集的核心属性显式暴露出来
+        self.classes = getattr(base_dataset, 'classes', None)
+        self.targets = getattr(base_dataset, 'targets', None)
+        self.samples = getattr(base_dataset, 'samples', None)
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, index):
+        sample, target = self.base_dataset[index]
+        # 原版 ImageFolder 的路径保存在 samples 属性中
+        path = self.base_dataset.samples[index][0]
+        filename = os.path.basename(path)
+        parts = filename.split('_')
+        vertebra_id = f"{parts[0]}_{parts[1]}"
+
+        return sample, target, vertebra_id
 
 def _pil_interp(method):
     """
@@ -71,15 +95,23 @@ class ClinicalDatasetWrapper(torch.utils.data.Dataset):
         print(f"Successfully mapped {len(self.clin_map)} clinical records.")
 
     def __getitem__(self, index):
-        img, target = self.dataset[index]
+        # 1. 修正拆包：接收底层 Wrapper 传来的 3 个参数
+        img, target, vertebra_id = self.dataset[index]
+
         filename = "unknown"
-        if hasattr(self.dataset, 'samples'):
+        # 2. 修正路径穿透：由于 dataset 外面包了一层 VertebraDatasetWrapper，必须通过 .base_dataset 访问 .samples
+        if hasattr(self.dataset, 'base_dataset') and hasattr(self.dataset.base_dataset, 'samples'):
+            filename = os.path.basename(self.dataset.base_dataset.samples[index][0])
+        elif hasattr(self.dataset, 'samples'):
             filename = os.path.basename(self.dataset.samples[index][0])
         elif hasattr(self.dataset, 'imgs'):
             filename = os.path.basename(self.dataset.imgs[index][0])
 
+        # 获取临床数据
         clin_data = self.clin_map.get(filename, torch.zeros(self.clinical_dim, dtype=torch.float32))
-        return (img, clin_data), target
+
+        # 3. 修正返回端：将 vertebra_id 加在末尾
+        return (img, clin_data), target, vertebra_id
 
     def __len__(self):
         return len(self.dataset)
@@ -136,6 +168,7 @@ def build_dataset(is_train, config):
 
     root = os.path.join(config.DATA.DATA_PATH, prefix)
     dataset = datasets.ImageFolder(root, transform=transform)
+    dataset = VertebraDatasetWrapper(dataset)
     nb_classes = len(dataset.classes)
 
     if config.MODEL.FUSION.ENABLED:
